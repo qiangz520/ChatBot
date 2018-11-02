@@ -9,16 +9,16 @@ import os
 import json
 import time
 import math
-
+import numpy as np
 import torch
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
 from torch.utils.data import *
+from parameters import *
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("device = {}".format(device))
-
 
 """计算已耗时和剩余时间。
 class CalculateTime(object)
@@ -135,20 +135,21 @@ class WordSeq(object):
 """将每组数据转换成tensor类型。
 class Batch2Tensor(object)
 
-DataLoader里batchsize要求数据长度一致，故用EOS_token填充。
+DataLoader里batchsize要求数据长度一致，故用句子用EOS_token填充，表情用AU_size维1矩阵填充。
 Args:
     wordseq: WordSeq类，包含了数据集的所有单词
     batch: 输入的一组数据
-    MAX_LENTH: 每个句子最大长度
-    input_len, output_len: 每个句子的真实长度(包含一个EOS)
+    MAX_LENGTH: 每个句子最大长度
+    input*/target* : 表示输入/输出
+    tensor*/size* : 表示tensor类型的内容/长度
+    text*/face* : 表示句子/表情
 ******************************
 Creat:@ZJianbo @2018.10.13
-Update: @ZJianbo @2018.10.14 将数据长度填充至MAX_LENTH。
+Update: @ZJianbo @2018.10.14 将数据长度填充至MAX_LENGTH。
 
 """
 SOS_token = 0
 EOS_token = 1
-MAX_LENGTH = 50
 class Batch2Tensor(object):
     def indexes_from_sentence(self, wordseq, sentence):
         return [wordseq.word2index[word] for word in sentence.split(' ')]
@@ -156,14 +157,26 @@ class Batch2Tensor(object):
     def tensor_from_sentence(self, wordseq, sentence):
         indexes = self.indexes_from_sentence(wordseq, sentence)
         len_sentence = len(indexes)
+        # print("len_sentence= ",len_sentence)
         for i in range(MAX_LENGTH - len_sentence):
             indexes.append(EOS_token)
         return torch.tensor(indexes, dtype=torch.long, device=device).view(-1, 1), len_sentence+1
 
+    def tensor_from_faces(self, face):
+        face_temp = face[:]
+        len_face = len(face_temp)
+        for i in range(MAX_LENGTH - len_face):
+            face_temp.append(np.ones(AU_size))
+        return torch.tensor(face_temp, dtype=torch.float, device=device), len_face+1
+
     def tensors_from_batch(self, wordseq, batch):
-        input_tensor, input_len = self.tensor_from_sentence(wordseq, batch['text'])
-        target_tensor, output_len = self.tensor_from_sentence(wordseq, batch['text_next'])
-        return input_tensor, target_tensor, input_len, output_len
+        input_tensor_text, input_size_text = self.tensor_from_sentence(wordseq, batch['text'])
+        target_tensor_text, target_size_text = self.tensor_from_sentence(wordseq, batch['text_next'])
+        input_tensor_face, input_size_face = self.tensor_from_faces(batch['facs'])
+        target_tensor_face, target_size_face = self.tensor_from_faces(batch['facs_next'])
+        return input_tensor_text, target_tensor_text, input_size_text, target_size_text, \
+               input_tensor_face, target_tensor_face, input_size_face, target_size_face
+
 
 """继承Dataset类，并重写方法。
 class TextDataset(Dataset)
