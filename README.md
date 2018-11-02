@@ -14,4 +14,13 @@
 
 ### Start
 
-start with train.py
+The source on the 79 server.
+
+Dataset in the /home/public/MoviechatData/
+
+Code in the /home/zjb/workspace/MovieChat/
+
+``` python
+python train.py
+```
+
