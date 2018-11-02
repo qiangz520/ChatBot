@@ -51,8 +51,8 @@ Decoder_glo = DecoderRNN(HiddenSize_glo, EmbeddingSize_glo, allDataWords.n_words
 EncoderOptimizer_glo = optim.SGD(Encoder_glo.parameters(), lr=LearningRate_glo)
 DecoderOptimizer_glo = optim.SGD(Decoder_glo.parameters(), lr=LearningRate_glo)
 Criterion_glo = nn.NLLLoss()
-Encoder_glo.load_state_dict(torch.load('encoder.pkl'))
-Decoder_glo.load_state_dict(torch.load('decoder.pkl'))
+# Encoder_glo.load_state_dict(torch.load('encoder.pkl'))
+# Decoder_glo.load_state_dict(torch.load('decoder.pkl'))
 
 
 
