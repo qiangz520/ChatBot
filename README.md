@@ -21,6 +21,7 @@ Dataset in the /home/public/MoviechatData/
 Code in the /home/zjb/workspace/MovieChat/
 
 ``` python
-python train.py
+python train_text.py
+python train_face.py
 ```
 

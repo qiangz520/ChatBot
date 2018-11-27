@@ -6,7 +6,6 @@
 # @Function  : 数据集的解析和前期准备
 
 from helpers import *
-
 from torch import optim
 from model import *
 
@@ -20,52 +19,66 @@ allData: 所有json文件内容组
 Creat:@ZJianbo @2018.10.13
 Update:
 """
+facevalue = FaceMaxMin()
 allDataWords = WordSeq()
 filenames = get_filename(DIR_PATH, "json")
-print("Reading JsonFiles! Please wait...")
+print("Reading Words! Please wait...")
 allData = []
-
+# words_flag = os.path.exists(WORDS_PATH)
+# faces_flag = os.path.exists(FACS_CPOINTS)
+words_flag = False
+faces_flag = False
 for filename in filenames:
     text = loadfile_json(filename)
     for temp in text:
         if len(temp['text'].split(' ')) < MAX_LENGTH and \
                 len(temp['text_next'].split(' ')) < MAX_LENGTH and \
-                temp['facs_next_exist'] == 1 and len(temp['facs']) < MAX_LENGTH and \
+                temp['facs_next_exist'] == 1 and temp['facs_prev_exist'] == 1 and \
+                len(temp['facs']) < MAX_LENGTH and \
                 len(temp['facs_next']) < MAX_LENGTH:
             allData.append(temp)
-        allDataWords.add_sentence(temp['text'])
-        allDataWords.add_sentence(temp['text_next'])
-        [allDataWords.add_sentence(hst) for hst in temp['text_history']]
+        if not words_flag:
+            allDataWords.add_sentence(temp['text'])
+            allDataWords.add_sentence(temp['text_next'])
+            [allDataWords.add_sentence(hst) for hst in temp['text_history']]
 
 # print(allDataWords.index2word)
-print("no repeat words= %d ,sum words= %d" % (allDataWords.n_words, allDataWords.allwords))
-print("sum bitches= ", len(allData))
+allDataWords.load_words() if words_flag else allDataWords.save_words()
+print("    no repeat words= ", allDataWords.n_words)
+print("    sum bitches= ", len(allData))
+
+print("Reading Faces! Please wait...")
+allDataFaces = FacesCluster(allData, n_type=FACE_TYPE)
+allDataFaces.load_faces() if faces_flag else (allDataFaces.run_cluster() and allDataFaces.save_faces())
+print("    face types= ", allDataFaces.n_type)
+
 
 trainData = allData[0:1000]
 testData = allData[1000:1100]
-trainDataset = TextDataset(allDataWords, trainData)
+trainDataset = TextDataset(allDataWords, allDataFaces, trainData)
 trainDataloader = DataLoader(trainDataset, shuffle=True, batch_size=BATCH_SIZE, drop_last=True)
-# print("data= ",training_data)
-# print("old= ", trainData[0]['facs'][0])
-# print("new= ", trainDataset[0][4][0])
+
 
 """加载模型"""
 Encoder_text_glo = EncoderTextBi(allDataWords.n_words, embeddingSize, hiddenSize).to(device)
 Decoder_text_glo = DecoderText(hiddenSize, embeddingSize, allDataWords.n_words).to(device)
-Encoder_face_glo = EncoderFace(AU_size, hiddenSize).to(device)
-Decoder_face_glo = DecoderFace(hiddenSize, AU_size).to(device)
-EnOptimizer_text_glo = optim.Adam(Encoder_text_glo.parameters(), lr=LR_text)
-DeOptimizer_text_glo = optim.Adam(Decoder_text_glo.parameters(), lr=LR_text)
+# Decoder_text_glo = AttnDecoderText(hiddenSize, allDataWords.n_words).to(device)
+Encoder_face_glo = EncoderFace(allDataFaces.n_type, embeddingSize, hiddenSize).to(device)
+Decoder_face_glo = DecoderFace(hiddenSize, embeddingSize, allDataFaces.n_type).to(device)
+Encoder_HST_glo = EncoderHST(hiddenSize*2, embeddingSize, hiddenSize).to(device)
+EnOptimizer_text_glo = optim.SGD(Encoder_text_glo.parameters(), lr=LR_text)
+DeOptimizer_text_glo = optim.SGD(Decoder_text_glo.parameters(), lr=LR_text)
 EnOptimizer_face_glo = optim.Adam(Encoder_face_glo.parameters(), lr=LR_face)
 DeOptimizer_face_glo = optim.Adam(Decoder_face_glo.parameters(), lr=LR_face)
 Criterion_text_glo = nn.NLLLoss()
-Criterion_face_glo = nn.MSELoss()
-# Encoder_text_glo.load_state_dict(torch.load('entext.pkl'))
-# Decoder_text_glo.load_state_dict(torch.load('detext.pkl'))
-# Encoder_face_glo.load_state_dict(torch.load('enface.pkl'))
-# Decoder_face_glo.load_state_dict(torch.load('deface.pkl'))
-# Encoder_text_glo.load_state_dict(torch.load('encoder1028.pkl'))
-# Decoder_text_glo.load_state_dict(torch.load('decoder1028.pkl'))
+Criterion_face_glo = nn.NLLLoss()
+
+if IsLoadModel:
+    Encoder_text_glo.load_state_dict(torch.load('entext.pkl'))
+    Decoder_text_glo.load_state_dict(torch.load('detext.pkl'))
+    Encoder_face_glo.load_state_dict(torch.load('enface.pkl'))
+    Decoder_face_glo.load_state_dict(torch.load('deface.pkl'))
+
 
 
 
