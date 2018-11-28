@@ -23,7 +23,7 @@ Args:
 Creat:@ZJianbo @2018.10.15
 Update:@ZJianbo @2018.10.21 添加了进行batch_size批量训练
 """
-def train(input_tensors, target_tensors, input_sizes, target_sizes, batchsize):
+def train(tensor_text, tensor_face, batchsize):
     EnOptimizer_text_glo.zero_grad()
     DeOptimizer_text_glo.zero_grad()
 
@@ -31,23 +31,20 @@ def train(input_tensors, target_tensors, input_sizes, target_sizes, batchsize):
     loss = 0
 
     for num_batch in range(batchsize):
-        input_tensor, target_tensor, input_size, target_size = \
-            input_tensors[num_batch], target_tensors[num_batch], input_sizes[num_batch], target_sizes[num_batch]
-
-        loss_size += target_size
+        loss_size += tensor_text[1][1][num_batch].numpy()
         #   隐藏层初始化
         entext_hidden = Encoder_text_glo.init_hidden()
-        encoder_outputs = torch.zeros(MAX_LENGTH, Encoder_text_glo.hidden_size, device=device)
+
+        #   编码得到最后的隐藏层
+        for ei in range(tensor_text[0][1][num_batch]):
+            entext_output, entext_hidden = Encoder_text_glo(tensor_text[0][0][num_batch][ei], entext_hidden)
+        '''
         entextHST_hidden=[]
         for i in range(10):
             entextHST_hidden[i] = Encoder_text_glo.init_hidden()
         enHST_hidden = Encoder_HST_glo.init_hidden()
 
-        #   编码得到最后的隐藏层
-        for ei in range(input_size):
-            entext_output, entext_hidden = Encoder_text_glo(input_tensor[ei], entext_hidden)
-            encoder_outputs[ei] = entext_output[0,0]
-            # encoder_output, encoder_hidden = Encoder_text_glo(input_tensor[ei], encoder_hidden)
+        '''
         detext_input = torch.tensor([[SOS_token]], device=device)
         detext_hidden = entext_hidden[:Decoder_text_glo.n_layers]
 
@@ -56,20 +53,18 @@ def train(input_tensors, target_tensors, input_sizes, target_sizes, batchsize):
         use_teacher_forcing = False
         if use_teacher_forcing:
             # Teacher forcing: Feed the target as the next input
-            for di in range(target_size):
-                decoder_output, decoder_hidden = Decoder_text_glo(detext_input, detext_hidden)
-                loss += Criterion_text_glo(decoder_output, target_tensor[di])
-                detext_input = target_tensor[di]  # Teacher forcing
+            for di in range(tensor_text[1][1][num_batch]):
+                detext_output, detext_hidden = Decoder_text_glo(detext_input, detext_hidden)
+                loss += Criterion_text_glo(detext_output, tensor_text[1][0][num_batch][di])
+                detext_input = tensor_text[1][0][num_batch][di]  # Teacher forcing
         else:
             # Without teacher forcing: use its own predictions as the next input
-            for di in range(target_size):
+            for di in range(tensor_text[1][1][num_batch]):
                 detext_output, detext_hidden = Decoder_text_glo(detext_input, detext_hidden)
-               #  detext_output, detext_hidden, detext_attention = Decoder_text_glo(
-               #      detext_input, detext_hidden, encoder_outputs)
                 topv, topi = detext_output.topk(1)
                 detext_input = topi.squeeze().detach()  # detach from history as input
 
-                loss += Criterion_text_glo(detext_output, target_tensor[di])
+                loss += Criterion_text_glo(detext_output, tensor_text[1][0][num_batch][di])
                 if detext_input.item() == EOS_token:
                     break
 
@@ -103,13 +98,10 @@ def train_iters(train_dataloader, n_iters=10, print_every=100, plot_every=10):
 
     for i_iter in range(1, n_iters + 1):
         for num, training_data in enumerate(train_dataloader):
-            input_tensor = training_data[0]
-            target_tensor = training_data[1]
-            input_size = training_data[2].numpy()
-            target_size = training_data[3].numpy()
+            tensor_text = training_data[0]
+            tensor_face = training_data[1]
 
-            loss = train(input_tensor, target_tensor,
-                         input_size, target_size, train_dataloader.batch_size)
+            loss = train(tensor_text, tensor_face, train_dataloader.batch_size)
             print_loss_total += loss
             plot_loss_total += loss
 

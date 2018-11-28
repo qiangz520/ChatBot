@@ -170,12 +170,12 @@ Update:@ZJianbo @2018.11.27 修改__init__(),增加run_cluster()函数
                             增加load_face()函数，用来加载聚类中心点和各表情类别
 """
 class FacesCluster(object):
-    def __init__(self, data, n_type=50):
+    def __init__(self, data, n_type):
         self.data = data
         self.n_type = n_type+2
         self.c_points = {"0": np.zeros(AU_size).tolist(), "1": np.ones(AU_size).tolist()}
         self.face_types = {}
-        self.kmeans = KMeans(n_clusters=self.n_type, max_iter=300, random_state=0, n_jobs=-1)
+        self.kmeans = KMeans(n_clusters=n_type, max_iter=300, random_state=0, n_jobs=-1)
 
     def run_cluster(self):
         all_faces = []
