@@ -16,6 +16,7 @@ import matplotlib.ticker as ticker
 
 from torch.utils.data import *
 from parameters import *
+from sklearn.model_selection import train_test_split
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("device = {}".format(device))
@@ -35,16 +36,18 @@ Returns:
 Creat:@ZJianbo @2018.10.13
 Update:
 """
+
+
 class CalculateTime(object):
     def __init__(self):
         pass
 
-    def as_minutes(self,s):
+    def as_minutes(self, s):
         m = math.floor(s / 60)
         s -= m * 60
         return '%dm %ds' % (m, s)
 
-    def calc_time(self,since, percent):
+    def calc_time(self, since, percent):
         now = time.time()
         s = now - since
         es = s / percent
@@ -65,9 +68,11 @@ Returns:
 Creat:@ZJianbo @2018.10.13
 Update:
 """
-def get_filename(filepath,filetype):
+
+
+def get_filename(filepath, filetype):
     filename = []
-    ftype = '.'+filetype
+    ftype = '.' + filetype
 
     for root, dirs, files in os.walk(filepath):
         for file in files:
@@ -89,6 +94,8 @@ Returns:
 Creat:@ZJianbo @2018.10.13
 Update:
 """
+
+
 def loadfile_json(filename):
     with open(filename, "r", encoding='utf-8') as f:
         text = json.load(f)
@@ -108,9 +115,11 @@ Args:
 Creat:@ZJianbo @2018.10.13
 Update:
 """
+
+
 class WordSeq(object):
     def __init__(self):
-        #self.name = name
+        # self.name = name
         self.word2index = {}
         self.word2count = {}
         self.index2word = {0: "SOS", 1: "EOS"}
@@ -146,10 +155,14 @@ Args:
 ******************************
 Creat:@ZJianbo @2018.10.13
 Update: @ZJianbo @2018.10.14 将数据长度填充至MAX_LENGTH。
-
+Update:@Qiangz @2018.11.25 
+                    将history 10个text对应的tensor放入list中返回
+                    添加tensors_list_from_history_text
 """
 SOS_token = 0
 EOS_token = 1
+
+
 class Batch2Tensor(object):
     def indexes_from_sentence(self, wordseq, sentence):
         return [wordseq.word2index[word] for word in sentence.split(' ')]
@@ -160,22 +173,38 @@ class Batch2Tensor(object):
         # print("len_sentence= ",len_sentence)
         for i in range(MAX_LENGTH - len_sentence):
             indexes.append(EOS_token)
-        return torch.tensor(indexes, dtype=torch.long, device=device).view(-1, 1), len_sentence+1
+        return torch.tensor(indexes, dtype=torch.long, device=device).view(-1, 1), len_sentence + 1
 
+    # 获取face_prev,face的tensor
     def tensor_from_faces(self, face):
         face_temp = face[:]
         len_face = len(face_temp)
         for i in range(MAX_LENGTH - len_face):
             face_temp.append(np.ones(AU_size))
-        return torch.tensor(face_temp, dtype=torch.float, device=device), len_face+1
+        return torch.tensor(face_temp, dtype=torch.float, device=device), len_face + 1
+
+    # 将history的10个text转换为对应的tensor 并用放在列表中进行返回
+    def tensors_list_from_history_text(self, wordseq, history_10):
+        tensors_list = []
+        text_size_list = []
+        # len_history_10 = len(history_10)
+        for history in history_10:
+            history_tensor, text_size = self.tensor_from_sentence(wordseq, history)
+            tensors_list.append(history_tensor)
+            text_size_list.append(text_size)
+        return tensors_list, text_size_list
 
     def tensors_from_batch(self, wordseq, batch):
         input_tensor_text, input_size_text = self.tensor_from_sentence(wordseq, batch['text'])
         target_tensor_text, target_size_text = self.tensor_from_sentence(wordseq, batch['text_next'])
         input_tensor_face, input_size_face = self.tensor_from_faces(batch['facs'])
         target_tensor_face, target_size_face = self.tensor_from_faces(batch['facs_next'])
+        text_history_tensors_list, history_text_size_list = self.tensors_list_from_history_text(batch["text_history"])
+        # tensor_face_history = torch.tensor([])if not batch["face_prev"] else self.tensor_from_faces(batch["face_prev"])
+        tensor_face_history,history_face_size = self.tensor_from_faces(batch["face_prev"])
         return input_tensor_text, target_tensor_text, input_size_text, target_size_text, \
-               input_tensor_face, target_tensor_face, input_size_face, target_size_face
+            input_tensor_face, target_tensor_face, input_size_face, target_size_face, \
+            text_history_tensors_list, tensor_face_history, history_text_size_list, history_face_size
 
 
 """继承Dataset类，并重写方法。
@@ -185,9 +214,30 @@ class TextDataset(Dataset)
 Creat:@ZJianbo @2018.10.13
 Update:
 """
+
+
 class TextDataset(Dataset):
     def __init__(self, data_words, batches):
         self.dataWords, self.batches = data_words, batches
+
+    def __getitem__(self, index):
+        return Batch2Tensor().tensors_from_batch(self.dataWords, self.batches[index])
+
+    def __len__(self):
+        return len(self.batches)
+
+
+"""继承Dataset类
+完整数据的训练数据集类--history, text, face
+Create:@Qiangz @2018.11.25
+Update:
+"""
+
+
+class TrainDataset(Dataset):
+    def __init__(self, data_words, batches):
+        self.dataWords = data_words
+        self.batches = batches
 
     def __getitem__(self, index):
         return Batch2Tensor().tensors_from_batch(self.dataWords, self.batches[index])
@@ -204,4 +254,15 @@ def showPlot(points):
     ax.yaxis.set_major_locator(loc)
     plt.plot(points)
 
+
 plt.switch_backend('agg')
+
+
+# split data set to for mind reading test;train:test:val = 4:1:1
+def split_data(dataset):
+    temp, test = train_test_split(dataset, test_size=0.1, train_size=0.5, random_state=1000)
+    # fix the random_state to keep the split in all experiments,split all data to temp:test = 5:1
+    train, val = train_test_split(dataset, test_size=0.1, train_size=0.4, random_state=1000)
+    # split the temp to train:val=4:1
+    return train, test, val
+

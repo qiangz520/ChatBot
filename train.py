@@ -22,11 +22,16 @@ Args:
 ******************************
 Creat:@ZJianbo @2018.10.15
 Update:@ZJianbo @2018.10.21 添加了进行batch_size批量训练
+Update:
 """
+
+
 def train(input_tensors, target_tensors, input_sizes, target_sizes, batchsize):
     EnOptimizer_text_glo.zero_grad()
     DeOptimizer_text_glo.zero_grad()
 
+    EnOptimizer_face_glo.zero_grad()
+    DeOptimizer_face_glo.zero_grad()
     loss_size = 0
     loss = 0
     for num_batch in range(batchsize):
@@ -91,15 +96,22 @@ def train_iters(train_dataloader, n_iters=10, print_every=100, plot_every=100):
 
     for i_iter in range(1, n_iters + 1):
         for num, training_data in enumerate(train_dataloader):
-            input_tensor = training_data[0]
+            input_tensor = training_data[0]   # query text tensor
             target_tensor = training_data[1]
             input_size = training_data[2].numpy()
             target_size = training_data[3].numpy()
 
-            loss = train(input_tensor, target_tensor,
+            # history_text_tensors_list = training_data[9].numpy()
+            # history_face_tensor = training_data[10]
+            #
+            # history_text_size_list = training_data[11].numpy()
+            # history_face_size = training_data[12].numpy()
+
+            text_loss = train(input_tensor, target_tensor,
                          input_size, target_size, train_dataloader.batch_size)
-            print_loss_total += loss
-            plot_loss_total += loss
+            # history_text_loss = train()
+            print_loss_total += text_loss
+            plot_loss_total += text_loss
 
         if i_iter % print_every == 0:
             print_loss_avg = print_loss_total / print_every
