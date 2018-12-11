@@ -33,18 +33,26 @@ def train(tensor_text, tensor_face, batchsize):
     for num_batch in range(batchsize):
         loss_size += tensor_text[1][1][num_batch].numpy()
         #   隐藏层初始化
-        entext_hidden = Encoder_text_glo.init_hidden()
 
+
+        #   <HST>
+        entextHST_hidden = []
+        for i in range(10):
+            entext_hidden = Encoder_text_glo.init_hidden()
+            for ei in range(tensor_text[i+2][1][num_batch]):
+                entext_output, entext_hidden = Encoder_text_glo(tensor_text[i+2][0][num_batch][ei], entext_hidden)
+            entextHST_hidden.append(entext_hidden)
+
+        history_hidden = Encoder_HST_glo.init_hidden()
+        for i in range(10,0,-1):
+            history_output, history_hidden = Encoder_HST_glo(entextHST_hidden[i], history_hidden)
+        #   </HST>
+
+        entext_hidden = Encoder_text_glo.init_hidden()
         #   编码得到最后的隐藏层
         for ei in range(tensor_text[0][1][num_batch]):
             entext_output, entext_hidden = Encoder_text_glo(tensor_text[0][0][num_batch][ei], entext_hidden)
-        '''
-        entextHST_hidden=[]
-        for i in range(10):
-            entextHST_hidden[i] = Encoder_text_glo.init_hidden()
-        enHST_hidden = Encoder_HST_glo.init_hidden()
 
-        '''
         detext_input = torch.tensor([[SOS_token]], device=device)
         detext_hidden = entext_hidden[:Decoder_text_glo.n_layers]
 
@@ -162,7 +170,7 @@ def evaluate_randomly(encoder, decoder, batches, n=3):
         batch = random.choice(batches)
         print('> ', batch['text'])
         print('= ', batch['text_next'])
-        output_words= evaluate(encoder, decoder, batch['text'])
+        output_words = evaluate(encoder, decoder, batch['text'])
         output_sentence = ' '.join(output_words)
         print('< ', output_sentence)
         print('')
@@ -186,8 +194,8 @@ if __name__ == '__main__':
     train_iters(trainDataloader, n_iters=Train_Iters, print_every=Print_Every)
     # 保存模型
     if IsSaveModel:
-        torch.save(Encoder_text_glo.state_dict(), 'entext.pkl')
-        torch.save(Decoder_text_glo.state_dict(), 'detext.pkl')
+        torch.save(Encoder_text_glo.state_dict(), './ModelPKL/entext.pkl')
+        torch.save(Decoder_text_glo.state_dict(), './ModelPKL/detext.pkl')
     # 从测试集中随机取n条数据进行测试
     print("***** Training Evaluate *****")
     evaluate_randomly(Encoder_text_glo, Decoder_text_glo, trainData, n=1)

@@ -175,7 +175,7 @@ class FacesCluster(object):
         self.n_type = n_type+2
         self.c_points = {"0": np.zeros(AU_size).tolist(), "1": np.ones(AU_size).tolist()}
         self.face_types = {}
-        self.kmeans = KMeans(n_clusters=n_type, max_iter=300, random_state=0, n_jobs=-1)
+        self.kmeans = KMeans(n_clusters=n_type, max_iter=500, random_state=0, n_jobs=-1)
 
     def run_cluster(self):
         all_faces = []
@@ -183,27 +183,41 @@ class FacesCluster(object):
             if temp["facs"]:
                 for temp_face in temp["facs"]:
                     all_faces.append(temp_face)
+            if temp["facs_next"]:
+                for temp_face in temp["facs_next"]:
+                    all_faces.append(temp_face)
             if temp["facs_prev"]:
                 for temp_face in temp["facs_prev"]:
                     all_faces.append(temp_face)
         all_faces = np.array(all_faces)
-        self.kmeans = self.kmeans.fit(all_faces)
-        self._get_point(self.get_cluster_centers())
+        self.kmeans = self.kmeans.fit(all_faces)    # kmeans算法聚类
+        self._get_point(self.get_cluster_centers())     # 获得中心点
+        # 把中心点类型0和1添加进去；json2list
         all_points = []
         for i in range(self.n_type):
             all_points.append(self.c_points[str(i)])
         all_points = np.array(all_points)
         self.kmeans.cluster_centers_ = all_points
+        # 将各条数据的face类型保存到face_types
+        self._get_face(self.data)
 
     def get_faces_type(self, faces):
-        return self.kmeans.predict(np.array(faces).reshape(-1,AU_size))
+        if len(faces) == 0:
+            predict = np.array([1])
+        else:
+            predict = self.kmeans.predict(np.array(faces).reshape(-1, AU_size))
+        return predict
 
     def get_cluster_centers(self):
         return self.kmeans.cluster_centers_
 
-    def _get_face(self,facs):
+    def _get_face(self, facs):
         for i, temp in enumerate(facs):
-            self.face_types[str(i)] = self.get_faces_type(temp["facs"]).tolist()
+            type_temp = []
+            type_temp.append(self.get_faces_type(temp["facs"]).tolist())
+            type_temp.append(self.get_faces_type(temp["facs_next"]).tolist())
+            type_temp.append(self.get_faces_type(temp["facs_prev"]).tolist())
+            self.face_types[str(i)] = type_temp
 
     def _get_point(self,points):
         for i,point in enumerate(points):
@@ -213,10 +227,9 @@ class FacesCluster(object):
         # self._get_point(self.get_cluster_centers())
         savefile_json(FACS_CPOINTS, self.c_points)
         # self._get_face(self.data)
-        # savefile_json(FACS_TYPE_PATH, self.face_types)
+        savefile_json(FACS_TYPE_PATH, self.face_types)
 
     def load_faces(self):
-        # self.face_types = loadfile_json(FACS_TYPE_PATH)
         self.c_points = loadfile_json(FACS_CPOINTS)
         all_points = []
         for i in range(self.n_type):
@@ -225,6 +238,8 @@ class FacesCluster(object):
         #self.kmeans = KMeans(init=(self.n_type, all_points), max_iter=10000, random_state=0, n_jobs=-1)
         self.kmeans = self.kmeans.fit(all_points)
         self.kmeans.cluster_centers_ = all_points
+        self._get_face(self.data)
+
 
 
 """将每组数据转换成tensor类型。
@@ -261,8 +276,28 @@ class Batch2Tensor(object):
             len_sentence = MAX_LENGTH
         return torch.tensor(indexes, dtype=torch.long, device=device).view(-1, 1), len_sentence
 
-    def tensor_from_faces(self, facecluster, face):
+    def tensor_from_faces_know(self, facecluster, index, kind):
+        face_temp = []
+        if kind == "facs":
+            face_temp = facecluster.face_types[str(index)][0]
+        elif kind == "facs_next":
+            face_temp = facecluster.face_types[str(index)][1]
+        elif kind == "facs_prev":
+            face_temp = facecluster.face_types[str(index)][2]
+        len_face = len(face_temp)
+        if len_face < MAX_LENGTH:
+            for i in range(MAX_LENGTH - len_face):
+                face_temp.append(1)
+            len_face += 1
+        else:
+            face_temp = face_temp[0:MAX_LENGTH]
+            len_face = MAX_LENGTH
+        return torch.tensor(np.array(face_temp), dtype=torch.long, device=device).view(-1, 1), len_face
+
+    def tensor_from_faces(self, facecluster,face):
+
         face_temp = facecluster.get_faces_type(face).tolist()
+
         len_face = len(face_temp)
         if len_face < MAX_LENGTH:
             for i in range(MAX_LENGTH - len_face):
@@ -273,7 +308,7 @@ class Batch2Tensor(object):
             len_face = MAX_LENGTH
         return torch.tensor(np.array(face_temp), dtype=torch.long, device=device).view(-1, 1), len_face
 
-    def tensors_from_batch(self, wordseq, facecluster, batch):
+    def tensors_from_batch(self, wordseq, facecluster, batch, index):
         # 12是历史信息个数10加上当前输入输出2
         # 0当前输入,1目标输出,2prev
         tensor_text = []
@@ -288,11 +323,11 @@ class Batch2Tensor(object):
                 self.tensor_from_sentence(wordseq, batch['text_history'][i])
             tensor_text.append([input_tensor_HSTtext, input_size_HSTtext])
 
-        input_tensor_face, input_size_face = self.tensor_from_faces(facecluster, batch['facs'])
+        input_tensor_face, input_size_face = self.tensor_from_faces_know(facecluster, index, "facs")
         tensor_face.append([input_tensor_face, input_size_face])
-        target_tensor_face, target_size_face = self.tensor_from_faces(facecluster, batch['facs_next'])
+        target_tensor_face, target_size_face = self.tensor_from_faces_know(facecluster, index, "facs_next")
         tensor_face.append([target_tensor_face, target_size_face])
-        input_tensor_facep, input_size_facep = self.tensor_from_faces(facecluster, batch['facs_prev'])
+        input_tensor_facep, input_size_facep = self.tensor_from_faces_know(facecluster, index, "facs_prev")
         tensor_face.append([input_tensor_facep, input_size_facep])
 
         return tensor_text, tensor_face
@@ -310,7 +345,7 @@ class TextDataset(Dataset):
         self.dataWords, self.dataFaces, self.batches = data_words, data_faces, batches
 
     def __getitem__(self, index):
-        return Batch2Tensor().tensors_from_batch(self.dataWords, self.dataFaces, self.batches[index])
+        return Batch2Tensor().tensors_from_batch(self.dataWords, self.dataFaces, self.batches[index], index)
 
     def __len__(self):
         return len(self.batches)

@@ -23,7 +23,7 @@ Creat:@ZJianbo @2018.11.28
 """
 def train(tensor_text, tensor_face, batchsize):
     """
-    tensor_face[0][1][2]:
+    tensor_*[0][1][2]:
         Dim1: [0]input [1]target [2]prev
         Dim2: [0]content [1]size
         Dim3: 0~batchsize中的第几个
@@ -52,8 +52,8 @@ def train(tensor_text, tensor_face, batchsize):
         if use_teacher_forcing:
             # Teacher forcing: Feed the target as the next input
             for di in range(tensor_face[1][1][num_batch]):
-                decoder_output, decoder_hidden = Decoder_face_glo(deface_input, deface_hidden)
-                loss += Criterion_face_glo(decoder_output, tensor_face[1][0][num_batch][di])
+                deface_output, deface_hidden = Decoder_face_glo(deface_input, deface_hidden)
+                loss += Criterion_face_glo(deface_output, tensor_face[1][0][num_batch][di])
                 deface_input = tensor_face[1][0][num_batch][di]  # Teacher forcing
         else:
             # Without teacher forcing: use its own predictions as the next input
@@ -156,7 +156,7 @@ def evaluate_randomly(encoder, decoder, batches, n=3):
 if __name__ == '__main__':
     train_iters(trainDataloader, n_iters=Train_Iters, print_every=Print_Every)
     if IsSaveModel:
-        torch.save(Encoder_face_glo.state_dict(), 'enface.pkl')
-        torch.save(Decoder_face_glo.state_dict(), 'deface.pkl')
+        torch.save(Encoder_face_glo.state_dict(), './ModelPKL/enface.pkl')
+        torch.save(Decoder_face_glo.state_dict(), './ModelPKL/deface.pkl')
     print("***** Face Evaluate *****")
     evaluate_randomly(Encoder_face_glo, Decoder_face_glo, testData, n=3)

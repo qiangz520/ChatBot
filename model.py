@@ -78,10 +78,10 @@ class EncoderHST(nn.Module):
         self.hidden_size = hidden_size
         self.n_layers = n_layers
         self.embedding = nn.Embedding(input_size, embedding_size)
-        self.gru = nn.GRU(embedding_size, hidden_size, bidirectional=True)
+        self.gru = nn.GRU(input_size, hidden_size, bidirectional=True)
 
     def forward(self, input_data, hidden):
-        embedded = self.embedding(input_data).view(1, 1, -1)
+        embedded = input_data.view(1, 1, -1)
         outputs, hidden = self.gru(embedded, hidden)
         outputs = outputs[:, :, :self.hidden_size] + outputs[:, :, self.hidden_size:]
 
