@@ -383,3 +383,12 @@ class FaceMaxMin(object):
         for i in range(AU_size):
             self.max[i] = self.ismax(self.max[i], values[i])
             self.min[i] = self.ismin(self.min[i], values[i])
+            
+            
+# split data set to for mind reading test;train:test:val = 4:1:1
+def split_data(dataset):
+    temp, test = train_test_split(dataset, test_size=0.1, train_size=0.5, random_state=1000)
+    # fix the random_state to keep the split in all experiments,split all data to temp:test = 5:1
+    train, val = train_test_split(dataset, test_size=0.1, train_size=0.4, random_state=1000)
+    # split the temp to train:val=4:1
+    return train, test, val
