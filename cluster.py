@@ -47,6 +47,9 @@ class facesCluster(object):
             if temp["facs_prev"]:
                 for temp_face in temp["facs_prev"]:
                     all_faces.append(temp_face)
+            if temp["facs_next"]:
+                for temp_face in temp["facs_next"]:
+                    all_faces.append(temp_face)
         self.all_faces =np.array(all_faces)
         self.kmeans = KMeans(n_clusters=10,random_state=0).fit(self.all_faces)
 

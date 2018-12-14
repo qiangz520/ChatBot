@@ -13,11 +13,13 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
+from sklearn.cluster import KMeans
 
 from torch.utils.data import *
 from parameters import *
 from sklearn.model_selection import train_test_split
 
+np.set_printoptions(suppress=True, precision=6)  # precision 是可选项
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("device = {}".format(device))
 
@@ -28,7 +30,7 @@ Args:
 calc_time(since,percent)
     since: 开始时间
     percent: 已完成百分比
-    
+
 Returns:
     %s (- %s)
     已耗时 （- 剩余时间）
@@ -102,25 +104,39 @@ def loadfile_json(filename):
     return text
 
 
+"""保存json文件
+Creat:@ZJianbo @2018.11.27
+"""
+
+
+def savefile_json(filename, data):
+    with open(filename, 'w') as f:
+        print(json.dumps(data), file=f)
+
+
 """将每个单词进行编号。
 class WordSeq(object)
 
 add_sentence(sentence)
-调用add_word(word)将输入的句子按单词进行添加、编号。
+    调用add_word(word)将输入的句子按单词进行添加、编号。
+save_words()
+    保存单词成json格式
+load_words()
+    加载json格式的单词
 
 Args:
     allwords: 输入的所有的单词个数
     n_words： 去重后的单词个数
 ******************************
 Creat:@ZJianbo @2018.10.13
-Update:
+Update:@ZJianbo @2018.11.27 增加save_words()和load_words()
 """
 
 
 class WordSeq(object):
     def __init__(self):
         # self.name = name
-        self.word2index = {}
+        self.word2index = {"SOS": 0, "EOS": 1}
         self.word2count = {}
         self.index2word = {0: "SOS", 1: "EOS"}
         self.n_words = 2  # Count SOS and EOS
@@ -140,6 +156,91 @@ class WordSeq(object):
         else:
             self.word2count[word] += 1
 
+    def save_words(self):
+        with open(WORDS_PATH, 'w') as f:
+            print(json.dumps(self.index2word), file=f)
+
+    def load_words(self):
+        words = loadfile_json(WORDS_PATH)
+        for i in range(2, len(words)):
+            self.index2word[i] = words[str(i)]
+            self.word2index[words[str(i)]] = i
+            self.n_words += 1
+
+
+"""
+User kmeans algorithm to obtain gesture templates
+Initialize kmeans
+
+all_faces:List;Include all faces
+kmeans:the obtained estimator by using sklearn.KMeans
+getFacesIndexs:predict certain faces's cluster index, return a list
+
+Create:@Qiangz @2018.11.26
+Update:@ZJianbo @2018.11.27 修改__init__(),增加run_cluster()函数
+                            增加_get_face()和_get_point()函数，用来获取表情和中心点
+                            增加save_face()函数，用来保存聚类中心点和各表情类别
+                            增加load_face()函数，用来加载聚类中心点和各表情类别
+"""
+
+
+class FacesCluster(object):
+    def __init__(self, data, n_type):
+        self.data = data
+        self.n_type = n_type + 2
+        self.c_points = {"0": np.zeros(AU_size).tolist(), "1": np.ones(AU_size).tolist()}
+        self.face_types = {}
+        self.kmeans = KMeans(n_clusters=n_type, max_iter=300, random_state=0, n_jobs=-1)
+
+    def run_cluster(self):
+        all_faces = []
+        for temp in self.data:
+            if temp["facs"]:
+                for temp_face in temp["facs"]:
+                    all_faces.append(temp_face)
+            if temp["facs_prev"]:
+                for temp_face in temp["facs_prev"]:
+                    all_faces.append(temp_face)
+        all_faces = np.array(all_faces)
+        self.kmeans = self.kmeans.fit(all_faces)
+        self._get_point(self.get_cluster_centers())
+        all_points = []
+        for i in range(self.n_type):
+            all_points.append(self.c_points[str(i)])
+        all_points = np.array(all_points)
+        self.kmeans.cluster_centers_ = all_points
+
+    def get_faces_type(self, faces):
+        return self.kmeans.predict(np.array(faces).reshape(-1, AU_size))
+
+    def get_cluster_centers(self):
+        return self.kmeans.cluster_centers_
+
+    def _get_face(self, facs):
+        for i, temp in enumerate(facs):
+            self.face_types[str(i)] = self.get_faces_type(temp["facs"]).tolist()
+
+    def _get_point(self, points):
+        for i, point in enumerate(points):
+            self.c_points[str(i + 2)] = point.tolist()
+
+    def save_faces(self):
+        # self._get_point(self.get_cluster_centers())
+        savefile_json(FACS_CPOINTS, self.c_points)
+        # self._get_face(self.data)
+        # savefile_json(FACS_TYPE_PATH, self.face_types)
+
+    def load_faces(self):
+        # self.face_types = loadfile_json(FACS_TYPE_PATH)
+        self.c_points = loadfile_json(FACS_CPOINTS)
+        all_points = []
+        for i in range(self.n_type):
+            all_points.append(self.c_points[str(i)])
+        all_points = np.array(all_points)
+        # self.kmeans = KMeans(init=(self.n_type, all_points), max_iter=10000, random_state=0, n_jobs=-1)
+        self.kmeans = self.kmeans.fit(all_points)
+        self.kmeans.cluster_centers_ = all_points
+
 
 """将每组数据转换成tensor类型。
 class Batch2Tensor(object)
@@ -155,9 +256,7 @@ Args:
 ******************************
 Creat:@ZJianbo @2018.10.13
 Update: @ZJianbo @2018.10.14 将数据长度填充至MAX_LENGTH。
-Update:@Qiangz @2018.11.25 
-                    将history 10个text对应的tensor放入list中返回
-                    添加tensors_list_from_history_text
+
 """
 SOS_token = 0
 EOS_token = 1
@@ -170,41 +269,50 @@ class Batch2Tensor(object):
     def tensor_from_sentence(self, wordseq, sentence):
         indexes = self.indexes_from_sentence(wordseq, sentence)
         len_sentence = len(indexes)
-        # print("len_sentence= ",len_sentence)
-        for i in range(MAX_LENGTH - len_sentence):
-            indexes.append(EOS_token)
-        return torch.tensor(indexes, dtype=torch.long, device=device).view(-1, 1), len_sentence + 1
+        if len_sentence < MAX_LENGTH:
+            for i in range(MAX_LENGTH - len_sentence):
+                indexes.append(EOS_token)
+            len_sentence += 1
+        else:
+            indexes = indexes[0:MAX_LENGTH]
+            len_sentence = MAX_LENGTH
+        return torch.tensor(indexes, dtype=torch.long, device=device).view(-1, 1), len_sentence
 
-    # 获取face_prev,face的tensor
-    def tensor_from_faces(self, face):
-        face_temp = face[:]
+    def tensor_from_faces(self, facecluster, face):
+        face_temp = facecluster.get_faces_type(face).tolist()
         len_face = len(face_temp)
-        for i in range(MAX_LENGTH - len_face):
-            face_temp.append(np.ones(AU_size))
-        return torch.tensor(face_temp, dtype=torch.float, device=device), len_face + 1
+        if len_face < MAX_LENGTH:
+            for i in range(MAX_LENGTH - len_face):
+                face_temp.append(EOS_token)
+            len_face += 1
+        else:
+            face_temp = face_temp[0:MAX_LENGTH]
+            len_face = MAX_LENGTH
+        return torch.tensor(np.array(face_temp), dtype=torch.long, device=device).view(-1, 1), len_face
 
-    # 将history的10个text转换为对应的tensor 并用放在列表中进行返回
-    def tensors_list_from_history_text(self, wordseq, history_10):
-        tensors_list = []
-        text_size_list = []
-        # len_history_10 = len(history_10)
-        for history in history_10:
-            history_tensor, text_size = self.tensor_from_sentence(wordseq, history)
-            tensors_list.append(history_tensor)
-            text_size_list.append(text_size)
-        return tensors_list, text_size_list
+    def tensors_from_batch(self, wordseq, facecluster, batch):
+        # 12是历史信息个数10加上当前输入输出2
+        # 0当前输入,1目标输出,2prev
+        tensor_text = []
+        tensor_face = []
 
-    def tensors_from_batch(self, wordseq, batch):
         input_tensor_text, input_size_text = self.tensor_from_sentence(wordseq, batch['text'])
+        tensor_text.append([input_tensor_text, input_size_text])
         target_tensor_text, target_size_text = self.tensor_from_sentence(wordseq, batch['text_next'])
-        input_tensor_face, input_size_face = self.tensor_from_faces(batch['facs'])
-        target_tensor_face, target_size_face = self.tensor_from_faces(batch['facs_next'])
-        text_history_tensors_list, history_text_size_list = self.tensors_list_from_history_text(batch["text_history"])
-        # tensor_face_history = torch.tensor([])if not batch["face_prev"] else self.tensor_from_faces(batch["face_prev"])
-        tensor_face_history,history_face_size = self.tensor_from_faces(batch["face_prev"])
-        return input_tensor_text, target_tensor_text, input_size_text, target_size_text, \
-            input_tensor_face, target_tensor_face, input_size_face, target_size_face, \
-            text_history_tensors_list, tensor_face_history, history_text_size_list, history_face_size
+        tensor_text.append([target_tensor_text, target_size_text])
+        for i in range(10):
+            input_tensor_HSTtext, input_size_HSTtext = \
+                self.tensor_from_sentence(wordseq, batch['text_history'][i])
+            tensor_text.append([input_tensor_HSTtext, input_size_HSTtext])
+
+        input_tensor_face, input_size_face = self.tensor_from_faces(facecluster, batch['facs'])
+        tensor_face.append([input_tensor_face, input_size_face])
+        target_tensor_face, target_size_face = self.tensor_from_faces(facecluster, batch['facs_next'])
+        tensor_face.append([target_tensor_face, target_size_face])
+        input_tensor_facep, input_size_facep = self.tensor_from_faces(facecluster, batch['facs_prev'])
+        tensor_face.append([input_tensor_facep, input_size_facep])
+
+        return tensor_text, tensor_face
 
 
 """继承Dataset类，并重写方法。
@@ -217,30 +325,11 @@ Update:
 
 
 class TextDataset(Dataset):
-    def __init__(self, data_words, batches):
-        self.dataWords, self.batches = data_words, batches
+    def __init__(self, data_words, data_faces, batches):
+        self.dataWords, self.dataFaces, self.batches = data_words, data_faces, batches
 
     def __getitem__(self, index):
-        return Batch2Tensor().tensors_from_batch(self.dataWords, self.batches[index])
-
-    def __len__(self):
-        return len(self.batches)
-
-
-"""继承Dataset类
-完整数据的训练数据集类--history, text, face
-Create:@Qiangz @2018.11.25
-Update:
-"""
-
-
-class TrainDataset(Dataset):
-    def __init__(self, data_words, batches):
-        self.dataWords = data_words
-        self.batches = batches
-
-    def __getitem__(self, index):
-        return Batch2Tensor().tensors_from_batch(self.dataWords, self.batches[index])
+        return Batch2Tensor().tensors_from_batch(self.dataWords, self.dataFaces, self.batches[index])
 
     def __len__(self):
         return len(self.batches)
@@ -255,14 +344,43 @@ def showPlot(points):
     plt.plot(points)
 
 
-plt.switch_backend('agg')
+# plt.switch_backend('agg')
+
+"""找到face每个AU的最大最小值"""
 
 
-# split data set to for mind reading test;train:test:val = 4:1:1
+class FaceMaxMin(object):
+    def __init__(self):
+        self.max = np.zeros(AU_size)
+        self.min = np.zeros(AU_size)
+
+    def ismax(self, nowmax, value):
+        if value > nowmax:
+            return value
+        else:
+            return nowmax
+
+    def ismin(self, nowmin, value):
+        if value < nowmin:
+            return value
+        else:
+            return nowmin
+
+    def maxmin(self, values):
+        for i in range(AU_size):
+            self.max[i] = self.ismax(self.max[i], values[i])
+            self.min[i] = self.ismin(self.min[i], values[i])
+
+
+""" 
+split data set to for mind reading test;train:test:val = 4:1:1
+Create:@Qiangz @2018.11.28
+"""
+
+
 def split_data(dataset):
     temp, test = train_test_split(dataset, test_size=0.1, train_size=0.5, random_state=1000)
     # fix the random_state to keep the split in all experiments,split all data to temp:test = 5:1
     train, val = train_test_split(dataset, test_size=0.1, train_size=0.4, random_state=1000)
     # split the temp to train:val=4:1
     return train, test, val
-
