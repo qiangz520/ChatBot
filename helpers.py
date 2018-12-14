@@ -14,6 +14,7 @@ import torch
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 from sklearn.cluster import KMeans
+from sklearn.model_selection import train_test_split
 
 from torch.utils.data import *
 from parameters import *
